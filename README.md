@@ -28,7 +28,8 @@ require([ 'idb' ], function(IDB){
     ]
   }).then(function(db){
 
-    // db.connection is the result of window.indexedDB.open(name, version)
+    // the returned "db" object wraps promise prototype methods around the IDBDatabase
+    // you can manually access the result of window.indexedDB.open(name, version) with db.connection
     console.log(db.connection);
 
     // add records to the table
@@ -53,15 +54,6 @@ require([ 'idb' ], function(IDB){
     // update records in the table (by keyPath)
     db.update('the_table_name',{ theKeyPath: "first", value: "Apple" }).then({
       // updated one record
-    });
-
-    db.upsert('the_table_name', [
-      { theKeyPath: "first", value: "A" },
-      { theKeyPath: "second", value: "B" },
-      { theKeyPath: "third", value: "C" }
-    ]).then(function(){
-      // create records if they didn't already exist
-      // update records if they already exist
     });
 
     // list all items in the table
