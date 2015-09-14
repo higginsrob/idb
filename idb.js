@@ -21,7 +21,7 @@ define(function(){
   };
 
   DB.prototype.add = function(table, records, eachCallback) {
-    if(this.closed) throw 'Database has been closed';
+    if(this.closed) throw new Error('Database has been closed');
     var self = this;
     return new Promise(function(resolve, reject){
       var transaction = self.connection.transaction(table, "readwrite" );
@@ -44,7 +44,7 @@ define(function(){
   };
 
   DB.prototype.delete = function(table, keys, eachCallback) {
-    if(this.closed) throw 'Database has been closed';
+    if(this.closed) throw new Error('Database has been closed');
     var self = this;
     return new Promise(function(resolve, reject){
       var transaction = self.connection.transaction(table, "readwrite" );
@@ -148,12 +148,64 @@ define(function(){
     });
   };
 
+  DB.prototype.upsert = function(table, records, eachCallback) {
+    if(this.closed) throw new Error('Database has been closed');
+    var self = this;
+    return new Promise(function(resolve, reject){
+      var transaction = self.connection.transaction(table, "readwrite" );
+      var store = transaction.objectStore(table);
+      if(Object.prototype.toString.call(records) === "[object Object]"){
+        records = [records];
+      }
+      records.forEach(function(record){
+        var request = store.put(record);
+        request.onsuccess = function(e){
+          if(typeof eachCallback === "function"){
+            eachCallback(e, record);
+          }
+        };
+      });
+      transaction.oncomplete = resolve.bind(self, records);
+      transaction.onerror = reject;
+      transaction.onabort = reject;
+    });
+  };
+
+  DB.prototype.set = function(table, records, eachCallback){
+    if(this.closed) throw new Error('Database has been closed');
+    if(Object.prototype.toString.call(records) !== "[object Array]") throw new Error('records argument must be an array');
+    if(!records.length) throw new Error('you must specify at least one record');
+    var self = this;
+    return new Promise(function(resolve, reject){
+      var transaction = self.connection.transaction(table, "readonly" );
+      var store = transaction.objectStore(table);
+      var keyPath = store.keyPath;
+      self.query(table).then(function(result){
+        var remove = [];
+        result.forEach(function(item){
+          if(typeof records[item[keyPath]] === "undefined"){
+            remove.push(item[keyPath]);
+          }
+        });
+        var upsert = function(){
+          self.upsert(table, records).then(resolve.bind(self, records)).catch(reject);
+        };
+        if(remove.length){
+          self.delete(table, remove).then(upsert).catch(reject);
+        } else {
+          upsert();
+        }
+      }).catch(reject);
+    });
+  };
+
   DB.prototype.query = function(table, key, listCallback){
     if(this.closed) throw new Error('Database has been closed');
     var self = this;
     return new Promise(function(resolve, reject){
       var transaction = self.connection.transaction(table, "readonly" );
       var store = transaction.objectStore(table);
+      var keyPath = store.keyPath;
       var list = [];
       if(Object.prototype.toString.call(key) === "[object Object]"){
         if(key.lower && key.upper){
