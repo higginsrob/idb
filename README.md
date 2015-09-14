@@ -14,21 +14,22 @@ require([ 'idb' ], function(IDB){
   IDB({
     name: 'the_db_name',
     version: 1,
-    schema: {
-      "the_table_name": {
-        key: {
-          keyPath: 'theKeyPath' // example: 'name', 'id', 'uid'
-        },
-        // define optional index schema
-        indexes: {
+    tables: [
+      {
+        name: "the_table_name", // example: 'user_list', 'datasource', 'state'
+        keyPath: 'theKeyPath', // example: 'id', 'uid', 'name', 'email'
+        indexes: { // optional - define additional indexs
           name: {},
-          email: { unique: true }
+          email: { unique: true },
           foo: {},
           bar: {}
         }
       }
-    }
+    ]
   }).then(function(db){
+
+    // db.connection is the result of window.indexedDB.open(name, version)
+    console.log(db.connection);
 
     // add records to the table
     db.add('the_table_name', [

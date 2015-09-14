@@ -21,6 +21,8 @@ define(function(){
 
     this.closed = false;
 
+    this.connection = db;
+
     this.add = function(table, records, eachCallback) {
       if(self.closed) throw 'Database has been closed';
       return new Promise(function(resolve, reject){
@@ -65,7 +67,7 @@ define(function(){
       });
     };
 
-    this.clear = function (table){
+    this.clear = function(table){
       if(self.closed) throw new Error('Database has been closed');
       return new Promise(function(resolve, reject){
         var transaction = db.transaction(table, "readwrite" );
@@ -77,7 +79,7 @@ define(function(){
       });
     };
 
-    this.count = function (table){
+    this.count = function(table){
       if(self.closed) throw new Error('Database has been closed');
       return new Promise(function(resolve, reject){
         var transaction = db.transaction(table, "readonly" );
@@ -89,7 +91,7 @@ define(function(){
       });
     };
 
-    this.get = function (table, key, eachCallback){
+    this.get = function(table, key, eachCallback){
       if(self.closed) throw new Error('Database has been closed');
       return new Promise(function(resolve, reject){
         var transaction = db.transaction(table, "readwrite" );
@@ -104,6 +106,10 @@ define(function(){
         transaction.onerror = reject;
         transaction.onabort = reject;
       });
+    };
+
+    this.getObjectStoreNames = function(){
+      return Array.prototype.slice.call(db.objectStoreNames);
     };
 
     this.update = function(table, records, updatecallback){
@@ -183,23 +189,25 @@ define(function(){
   return function (options) {
     return new Promise(function(resolve, reject){
       if(!indexedDB) throw new Error('IndexedDB not supported in this browser');
+      if(Object.prototype.toString.call(options.tables) !== "[object Array]") throw new Error('You must specify at least one table');
       var request = indexedDB.open(options.name, options.version);
       request.onsuccess = function(e){
         resolve(new DB(e.target.result));
       };
       request.onupgradeneeded = function(e){
         var db = e.target.result;
-        Object.keys(options.schema).forEach(function(tableName){
-          var table = options.schema[tableName];
-          var store = db.createObjectStore(tableName, table.key);
+        options.tables.forEach(function(table){
+          if(!table.name || !table.keyPath) throw new Error("a table must have a name and a keyPath");
+          var store = db.createObjectStore(table.name, { keyPath: table.keyPath });
           if(Object.prototype.toString.call(table.indexes) === "[object Object]"){
             Object.keys(table.indexes).forEach(function(indexKey){
-              try { store.index(indexKey); }
-              catch(e) {
+              try {
+                store.index(indexKey);
+              } catch(e) {
                 store.createIndex(
                   indexKey,
                   table.indexes[indexKey].key || indexKey,
-                  Object.keys(table.indexes[indexKey]).length ? table.indexes[indexKey] : { unique: false }
+                  Object.keys(table.indexes[indexKey]).length? table.indexes[indexKey] : { unique: false }
                 );
               }
             });
