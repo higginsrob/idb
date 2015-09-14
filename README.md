@@ -56,6 +56,28 @@ require([ 'idb' ], function(IDB){
       // updated one record
     });
 
+    // add records to the table if they do not already exist
+    // update records in the table if they already exist
+    db.upsert('the_table_name', [
+      { theKeyPath: "first", value: "A" },
+      { theKeyPath: "second", value: "B" },
+      { theKeyPath: "third", value: "C" }
+    ]).then(function(){
+      // created or updated three records
+    });
+
+    // set all of the tables records in one command
+    // any record not specified will be deleted
+    db.set('the_table_name', [
+      { theKeyPath: "second", value: "B" },
+      { theKeyPath: "third", value: "C" }
+    ]).then(function(){
+      // delete all records exept where keyPath === "second" or "third"
+      // upsert (create or update) record "second" and "third"
+      // similar to calling clear then add, but will only delete records
+      // that are not specified
+    });
+
     // list all items in the table
     db.query('the_table_name').then(function(list) {
       console.log(list); // array
