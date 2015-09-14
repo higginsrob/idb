@@ -34,7 +34,7 @@ define(function(){
         records.forEach(function(record){
           var request = store.add(record);
           request.onsuccess = function(e){
-            if(typeof callback === "function"){
+            if(typeof eachCallback === "function"){
               eachCallback(e, record);
             }
           };
@@ -56,7 +56,7 @@ define(function(){
         keys.forEach(function(key){
           var request = store.delete(key);
           request.onsuccess = function(e){
-            if(typeof callback === "function"){
+            if(typeof eachCallback === "function"){
               eachCallback(e, key);
             }
           };
@@ -112,7 +112,7 @@ define(function(){
       return Array.prototype.slice.call(db.objectStoreNames);
     };
 
-    this.update = function(table, records, updatecallback){
+    this.update = function(table, records, eachCallback){
       if(self.closed) throw new Error('Database has been closed');
       return new Promise(function(resolve, reject){
         var transaction = db.transaction(table, "readwrite" );
@@ -131,12 +131,69 @@ define(function(){
             });
             var requestUpdate = store.put(result);
             requestUpdate.onsuccess = function(e) {
-               if(typeof updatecallback === "function"){
-                 updatecallback(e, result, record);
+               if(typeof eachCallback === "function"){
+                 eachCallback(e, result, record);
                }
             };
             requestUpdate.onerror = reject;
             requestUpdate.onabort = reject;
+          };
+        });
+        transaction.oncomplete = resolve.bind(self, records);
+        transaction.onerror = reject;
+        transaction.onabort = reject;
+      });
+    };
+
+    this.upsert = function(table, records, eachCallback){
+      if(self.closed) throw new Error('Database has been closed');
+      return new Promise(function(resolve, reject){
+        var transaction = db.transaction(table, "readwrite" );
+        var store = transaction.objectStore(table);
+        if(Object.prototype.toString.call(records) === "[object Object]"){
+          records = [records];
+        }
+        records.forEach(function(record){
+          if(Object.prototype.toString.call(record) !== "[object Object]") throw new Error('you must use an object to modify changes');
+          if(!record[store.keyPath]) throw new Error('you must specify the index key in your modify object');
+          var request = store.get(record[store.keyPath]);
+          request.onsuccess = function(e){
+            if(!request || !request.result){ // add
+              var transaction = db.transaction(table, "readwrite" );
+              var store = transaction.objectStore(table);
+              if(Object.prototype.toString.call(records) === "[object Object]"){
+                records = [records];
+              }
+              records.forEach(function(record){
+                var request = store.add(record);
+                request.onsuccess = function(e){
+                  if(typeof eachCallback === "function"){
+                    eachCallback(e, record);
+                  }
+                };
+              });
+              transaction.oncomplete = resolve.bind(self, records);
+              transaction.onerror = reject;
+              transaction.onabort = reject;
+            } else { // update
+              transaction = db.transaction(table, "readwrite" );
+              store = transaction.objectStore(table);
+              var request = store.get(record[store.keyPath]);
+              request.onsuccess = function(e){
+                var result = request.result;
+                Object.keys(record).forEach(function(key){
+                  result[key] = record[key];
+                });
+                var requestUpdate = store.put(result);
+                requestUpdate.onsuccess = function(e) {
+                   if(typeof eachCallback === "function"){
+                     eachCallback(e, result, record);
+                   }
+                };
+                requestUpdate.onerror = reject;
+                requestUpdate.onabort = reject;
+              };
+            }
           };
         });
         transaction.oncomplete = resolve.bind(self, records);

@@ -55,6 +55,15 @@ require([ 'idb' ], function(IDB){
       // updated one record
     });
 
+    db.upsert('the_table_name', [
+      { theKeyPath: "first", value: "A" },
+      { theKeyPath: "second", value: "B" },
+      { theKeyPath: "third", value: "C" }
+    ]).then(function(){
+      // create records if they didn't already exist
+      // update records if they already exist
+    });
+
     // list all items in the table
     db.query('the_table_name').then(function(list) {
       console.log(list); // array
