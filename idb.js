@@ -15,27 +15,28 @@ define(function(){
   var indexedDB = window.indexedDB || window.webkitIndexedDB || window.mozIndexedDB || window.oIndexedDB || window.msIndexedDB;
   var IDBKeyRange = window.IDBKeyRange || window.webkitIDBKeyRange;
 
-  var DB = function(db){
+  var IDBManager = function(db){
     this.closed = false;
     this.connection = db;
   };
 
-  DB.prototype.add = function(table, records, eachCallback) {
-    if(this.closed) throw new Error('Database has been closed');
+  IDBManager.prototype.add = function(records, eachCallback) {
     var self = this;
     return new Promise(function(resolve, reject){
-      var transaction = self.connection.transaction(table, "readwrite" );
-      var store = transaction.objectStore(table);
+      if(self.closed) throw new Error('Database has been closed');
+      if(!self.selectedObjectStore) throw new Error('Object store not selected');
+      var transaction = self.connection.transaction(self.selectedObjectStore, "readwrite" );
+      var store = transaction.objectStore(self.selectedObjectStore);
       if(Object.prototype.toString.call(records) === "[object Object]"){
         records = [records];
       }
       records.forEach(function(record){
         var request = store.add(record);
-        request.onsuccess = function(e){
-          if(typeof eachCallback === "function"){
+        if(typeof eachCallback === "function"){
+          request.onsuccess = function(e){
             eachCallback(e, record);
-          }
-        };
+          };
+        }
       });
       transaction.oncomplete = resolve.bind(self, records);
       transaction.onerror = reject;
@@ -43,22 +44,58 @@ define(function(){
     });
   };
 
-  DB.prototype.delete = function(table, keys, eachCallback) {
-    if(this.closed) throw new Error('Database has been closed');
+  IDBManager.prototype.clear = function(){
     var self = this;
     return new Promise(function(resolve, reject){
-      var transaction = self.connection.transaction(table, "readwrite" );
-      var store = transaction.objectStore(table);
+      if(self.closed) throw new Error('Database has been closed');
+      if(!self.connection) throw new Error('database not found');
+      var transaction = self.connection.transaction(self.selectedObjectStore, "readwrite" );
+      var store = transaction.objectStore(self.selectedObjectStore);
+      store.clear();
+      transaction.oncomplete = resolve.bind(self, true);
+      transaction.onerror = function(){ reject(false); };
+      transaction.onabort = function(){ reject(false); };
+    });
+  };
+
+  IDBManager.prototype.count = function(){
+    var self = this;
+    return new Promise(function(resolve, reject){
+      if(self.closed) throw new Error('Database has been closed');
+      if(!self.selectedObjectStore) throw new Error('database not found');
+      var transaction = self.connection.transaction(self.selectedObjectStore, "readonly" );
+      var store = transaction.objectStore(self.selectedObjectStore);
+      var request = store.count();
+      transaction.oncomplete = function(e){
+        resolve(request.result);
+      };
+      transaction.onerror = reject;
+      transaction.onabort = reject;
+    });
+  };
+
+  IDBManager.prototype.close = function(){
+    if(this.closed) throw new Error('Database is already closed');
+    this.connection.close();
+    this.closed = true;
+  };
+
+  IDBManager.prototype.delete = function(keys, eachCallback) {
+    var self = this;
+    return new Promise(function(resolve, reject){
+      if(self.closed) throw new Error('Database has been closed');
+      var transaction = self.connection.transaction(self.selectedObjectStore, "readwrite" );
+      var store = transaction.objectStore(self.selectedObjectStore);
       if(Object.prototype.toString.call(keys) === "[object String]"){
         keys = [keys];
       }
       keys.forEach(function(key){
         var request = store.delete(key);
-        request.onsuccess = function(e){
-          if(typeof eachCallback === "function"){
+        if(typeof eachCallback === "function"){
+          request.onsuccess = function(e){
             eachCallback(e, key);
-          }
-        };
+          };
+        }
       });
       transaction.oncomplete = resolve.bind(self,keys);
       transaction.onerror = reject;
@@ -66,60 +103,43 @@ define(function(){
     });
   };
 
-  DB.prototype.clear = function(table){
-    if(this.closed) throw new Error('Database has been closed');
+  IDBManager.prototype.get = function(key){
     var self = this;
     return new Promise(function(resolve, reject){
-      var transaction = self.connection.transaction(table, "readwrite" );
-      var store = transaction.objectStore(table);
-      store.clear();
-      transaction.oncomplete = resolve.bind(self, true);
-      transaction.onerror = function(){ reject(false) };
-      transaction.onabort = function(){ reject(false) };
-    });
-  };
-
-  DB.prototype.count = function(table){
-    if(this.closed) throw new Error('Database has been closed');
-    var self = this;
-    return new Promise(function(resolve, reject){
-      var transaction = self.connection.transaction(table, "readonly" );
-      var store = transaction.objectStore(table);
-      var request = store.count();
-      transaction.oncomplete = resolve.bind(self, request.result);
-      transaction.onerror = reject;
-      transaction.onabort = reject;
-    });
-  };
-
-  DB.prototype.get = function(table, key, eachCallback){
-    if(this.closed) throw new Error('Database has been closed');
-    var self = this;
-    return new Promise(function(resolve, reject){
-      var transaction = self.connection.transaction(table, "readwrite" );
-      var store = transaction.objectStore(table);
+      if(self.closed) throw new Error('Database has been closed');
+      if(!self.connection || !self.selectedObjectStore) throw new Error('database not found');
+      var transaction = self.connection.transaction(self.selectedObjectStore, "readonly" );
+      var store = transaction.objectStore(self.selectedObjectStore);
       var request = store.get(key);
-      request.onsuccess = function(e){
-        if(typeof eachCallback === "function"){
-          eachCallback(e, request.result);
-        }
+      transaction.oncomplete = function(){
+        resolve(request.result);
       };
-      transaction.oncomplete = resolve.bind(self, request.result);
       transaction.onerror = reject;
       transaction.onabort = reject;
     });
   };
 
-  DB.prototype.getObjectStoreNames = function(){
+  IDBManager.prototype.getObjectStoreNames = function(){
     return Array.prototype.slice.call(this.connection.objectStoreNames);
   };
 
-  DB.prototype.update = function(table, records, eachCallback){
-    if(this.closed) throw new Error('Database has been closed');
+  // IDBManager.prototype.getDatabaseNames = function(){
+  //   return new Promise(function(resolve, reject){
+  //     var transaction = indexedDB.webkitGetDatabaseNames();
+  //     transaction.onsuccess = function(e){
+  //       resolve(Array.prototype.slice.call(e.target.result));
+  //     };
+  //     transaction.onerror = reject;
+  //   });
+  // };
+
+  IDBManager.prototype.update = function(records, eachCallback){
     var self = this;
     return new Promise(function(resolve, reject){
-      var transaction = self.connection.transaction(table, "readwrite" );
-      var store = transaction.objectStore(table);
+      if(self.closed) throw new Error('Database has been closed');
+      if(!self.connection || !self.selectedObjectStore) throw new Error('database not found');
+      var transaction = self.connection.transaction(self.selectedObjectStore, "readwrite" );
+      var store = transaction.objectStore(self.selectedObjectStore);
       if(Object.prototype.toString.call(records) === "[object Object]"){
         records = [records];
       }
@@ -133,11 +153,11 @@ define(function(){
             result[key] = record[key];
           });
           var requestUpdate = store.put(result);
-          requestUpdate.onsuccess = function(e) {
-             if(typeof eachCallback === "function"){
+         if(typeof eachCallback === "function"){
+            requestUpdate.onsuccess = function(e) {
                eachCallback(e, result, record);
-             }
-          };
+             };
+          }
           requestUpdate.onerror = reject;
           requestUpdate.onabort = reject;
         };
@@ -148,22 +168,23 @@ define(function(){
     });
   };
 
-  DB.prototype.upsert = function(table, records, eachCallback) {
-    if(this.closed) throw new Error('Database has been closed');
+  IDBManager.prototype.upsert = function(records, eachCallback) {
     var self = this;
     return new Promise(function(resolve, reject){
-      var transaction = self.connection.transaction(table, "readwrite" );
-      var store = transaction.objectStore(table);
+      if(self.closed) throw new Error('Database has been closed');
+      if(!self.connection || !self.selectedObjectStore) throw new Error('database not found');
+      var transaction = self.connection.transaction(self.selectedObjectStore, "readwrite" );
+      var store = transaction.objectStore(self.selectedObjectStore);
       if(Object.prototype.toString.call(records) === "[object Object]"){
         records = [records];
       }
       records.forEach(function(record){
         var request = store.put(record);
-        request.onsuccess = function(e){
-          if(typeof eachCallback === "function"){
+        if(typeof eachCallback === "function"){
+          request.onsuccess = function(e){
             eachCallback(e, record);
-          }
-        };
+          };
+        }
       });
       transaction.oncomplete = resolve.bind(self, records);
       transaction.onerror = reject;
@@ -171,16 +192,22 @@ define(function(){
     });
   };
 
-  DB.prototype.set = function(table, records, eachCallback){
-    if(this.closed) throw new Error('Database has been closed');
-    if(Object.prototype.toString.call(records) !== "[object Array]") throw new Error('records argument must be an array');
-    if(!records.length) throw new Error('you must specify at least one record');
+  IDBManager.prototype.set = function(records, eachCallback){ //  broken
     var self = this;
     return new Promise(function(resolve, reject){
-      var transaction = self.connection.transaction(table, "readonly" );
-      var store = transaction.objectStore(table);
+      if(self.closed) throw new Error('Database has been closed');
+      if(!self.connection) throw new Error('database not found');
+      if(Object.prototype.toString.call(records) !== "[object Array]") throw new Error('records argument must be an array');
+      if(!records.length) throw new Error('you must specify at least one record');
+
+      self.clear().then(function(){
+        // self.add
+      });
+
+      var transaction = self.connection.transaction(self.selectedObjectStore, "readonly" );
+      var store = transaction.objectStore(self.selectedObjectStore);
       var keyPath = store.keyPath;
-      self.query(table).then(function(result){
+      self.query().then(function(result){
         var remove = [];
         result.forEach(function(item){
           if(typeof records[item[keyPath]] === "undefined"){
@@ -188,10 +215,10 @@ define(function(){
           }
         });
         var upsert = function(){
-          self.upsert(table, records).then(resolve.bind(self, records)).catch(reject);
+          self.upsert(records).then(resolve.bind(self, records)).catch(reject);
         };
         if(remove.length){
-          self.delete(table, remove).then(upsert).catch(reject);
+          self.delete(remove).then(upsert).catch(reject);
         } else {
           upsert();
         }
@@ -199,77 +226,96 @@ define(function(){
     });
   };
 
-  DB.prototype.query = function(table, key, listCallback){
-    if(this.closed) throw new Error('Database has been closed');
+  IDBManager.prototype.query = function(index, config, eachCallback){
     var self = this;
     return new Promise(function(resolve, reject){
-      var transaction = self.connection.transaction(table, "readonly" );
-      var store = transaction.objectStore(table);
-      var keyPath = store.keyPath;
+      if(this.closed) throw new Error('Database has been closed');
+      if(!self.connection || !self.selectedObjectStore) throw new Error('database not found');
+      var transaction = self.connection.transaction(self.selectedObjectStore, "readonly" );
+      var store = transaction.objectStore(self.selectedObjectStore);
       var list = [];
-      if(Object.prototype.toString.call(key) === "[object Object]"){
-        if(key.lower && key.upper){
-          key = IDBKeyRange.bound(key.lower, key.upper);
-        } else if(key.only){
-          key = IDBKeyRange.only(key.only);
-        } else if(key.lower){
-          key = IDBKeyRange.lowerBound(key.lower);
-        } else if(key.upper){
-          key = IDBKeyRange.upperBound(key.upper);
+      if(Object.prototype.toString.call(config) === "[object Object]"){
+        if(config.lower && config.upper){
+          config = IDBKeyRange.bound(config.lower, config.upper);
+        } else if(config.only){
+          config = IDBKeyRange.only(config.only);
+        } else if(config.lower){
+          config = IDBKeyRange.lowerBound(config.lower);
+        } else if(config.upper){
+          config = IDBKeyRange.upperBound(config.upper);
         }
       }
-      store.openCursor(key).onsuccess = function(e){
+      var onsuccess = function(e){
         var cursor = e.target.result;
         if(cursor){
           list.push(cursor.value);
-          if(typeof listCallback === "function"){
-            listCallback(e, cursor.value);
+          if(typeof eachCallback === "function"){
+            eachCallback(e, cursor.value);
           }
           cursor.continue();
         }
       };
-      transaction.oncomplete = resolve.bind(self, list);
+      if(typeof index === "string"){
+        store.index(index).openCursor(config).onsuccess = onsuccess;
+      } else {
+        store.openCursor(config).onsuccess = onsuccess;
+      }
+      transaction.oncomplete = function(){
+        resolve(list);
+      };
       transaction.onerror = reject;
       transaction.onabort = reject;
     });
   };
 
-  DB.prototype.close = function() {
-    if(this.closed) throw new Error('Database is already closed');
-    this.connection.close();
-    this.closed = true;
+  IDBManager.prototype.use = function(selected_objectStore_name){
+    if(typeof selected_objectStore_name === "string"){
+      this.selectedObjectStore = selected_objectStore_name;
+    }
+    return this;
   };
 
-
-  return function (options) {
+  return function(options) {
     return new Promise(function(resolve, reject){
       if(!indexedDB) throw new Error('IndexedDB not supported in this browser');
       if(Object.prototype.toString.call(options.tables) !== "[object Array]") throw new Error('You must specify at least one table');
       var request = indexedDB.open(options.name, options.version);
       request.onsuccess = function(e){
-        resolve(new DB(e.target.result));
+        resolve(new IDBManager(e.target.result));
       };
+      request.onerror = reject;
       request.onupgradeneeded = function(e){
         var db = e.target.result;
         options.tables.forEach(function(table){
-          if(!table.name || !table.keyPath) throw new Error("a table must have a name and a keyPath");
-          var store = db.createObjectStore(table.name, { keyPath: table.keyPath });
-          if(Object.prototype.toString.call(table.indexes) === "[object Object]"){
-            Object.keys(table.indexes).forEach(function(indexKey){
-              try {
-                store.index(indexKey);
-              } catch(e) {
-                store.createIndex(
-                  indexKey,
-                  table.indexes[indexKey].key || indexKey,
-                  Object.keys(table.indexes[indexKey]).length? table.indexes[indexKey] : { unique: false }
-                );
+          if(!table.name) throw new Error("a table must have a name");
+          if(!table.key) table.key = { autoIncrement: true };
+          if(typeof table.key === "string"){
+            table.key = { keyPath: table.key };
+          }
+          var store = db.createObjectStore(table.name, table.key);
+          if(typeof table.indexes === "string" || Object.prototype.toString.call(table.indexes) === "[object Object]"){
+            table.indexes = [table.indexes];
+          }
+          if(Object.prototype.toString.call(table.indexes) === "[object Array]"){
+            table.indexes.forEach(function(index){
+              if(typeof index === "string"){
+                store.createIndex(index, index, { unique: false, multientry: false });
+              } else if(Object.prototype.toString.call(index) === "[object Object]"){
+                Object.keys(index).forEach(function(key){
+                  if(typeof index[key] === "string" || Object.prototype.toString.call(index[key]) === "[object Array]"){
+                    store.createIndex(key, index[key], { unique: false, multientry: false });
+                  } else if(Object.prototype.toString.call(index[key]) === "[object Object]"){
+                    var path = index[key].path || key;
+                    delete index[key].path;
+                    store.createIndex(key, path, index[key]);
+                  }
+                  return false;
+                });
               }
             });
           }
         });
       };
-      request.onerror = reject;
     });
   };
 });
