@@ -6,9 +6,7 @@
   @license Open source under MIT
   Copyright 2015 Robert Higgins All rights reserved
   ====================================================
-  global Promise
-  ====================================================
-*/
+*//* global Promise define */
 
 define(function(){
 
@@ -66,7 +64,7 @@ define(function(){
       var transaction = self.connection.transaction(self.selectedObjectStore, "readonly" );
       var store = transaction.objectStore(self.selectedObjectStore);
       var request = store.count();
-      transaction.oncomplete = function(e){
+      transaction.oncomplete = function(){
         resolve(request.result);
       };
       transaction.onerror = reject;
@@ -123,16 +121,6 @@ define(function(){
     return Array.prototype.slice.call(this.connection.objectStoreNames);
   };
 
-  // IDBManager.prototype.getDatabaseNames = function(){
-  //   return new Promise(function(resolve, reject){
-  //     var transaction = indexedDB.webkitGetDatabaseNames();
-  //     transaction.onsuccess = function(e){
-  //       resolve(Array.prototype.slice.call(e.target.result));
-  //     };
-  //     transaction.onerror = reject;
-  //   });
-  // };
-
   IDBManager.prototype.update = function(records, eachCallback){
     var self = this;
     return new Promise(function(resolve, reject){
@@ -147,7 +135,7 @@ define(function(){
         if(Object.prototype.toString.call(record) !== "[object Object]") throw new Error('you must use an object to modify changes');
         if(!record[store.keyPath]) throw new Error('you must specify the index key in your modify object');
         var request = store.get(record[store.keyPath]);
-        request.onsuccess = function(e){
+        request.onsuccess = function(){
           var result = request.result;
           Object.keys(record).forEach(function(key){
             result[key] = record[key];
@@ -189,40 +177,6 @@ define(function(){
       transaction.oncomplete = resolve.bind(self, records);
       transaction.onerror = reject;
       transaction.onabort = reject;
-    });
-  };
-
-  IDBManager.prototype.set = function(records, eachCallback){ //  broken
-    var self = this;
-    return new Promise(function(resolve, reject){
-      if(self.closed) throw new Error('Database has been closed');
-      if(!self.connection) throw new Error('database not found');
-      if(Object.prototype.toString.call(records) !== "[object Array]") throw new Error('records argument must be an array');
-      if(!records.length) throw new Error('you must specify at least one record');
-
-      self.clear().then(function(){
-        // self.add
-      });
-
-      var transaction = self.connection.transaction(self.selectedObjectStore, "readonly" );
-      var store = transaction.objectStore(self.selectedObjectStore);
-      var keyPath = store.keyPath;
-      self.query().then(function(result){
-        var remove = [];
-        result.forEach(function(item){
-          if(typeof records[item[keyPath]] === "undefined"){
-            remove.push(item[keyPath]);
-          }
-        });
-        var upsert = function(){
-          self.upsert(records).then(resolve.bind(self, records)).catch(reject);
-        };
-        if(remove.length){
-          self.delete(remove).then(upsert).catch(reject);
-        } else {
-          upsert();
-        }
-      }).catch(reject);
     });
   };
 
